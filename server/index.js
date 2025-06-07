@@ -8,17 +8,23 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = 4000;
-const MONGODB_URI = 'mongodb://localhost:27017/collab-editor'; // your MongoDB URI
 
-// Connect to MongoDB
-mongoose.connect(MONGODB_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-}).then(() => {
-    console.log('MongoDB connected');
-}).catch(err => {
-    console.error('MongoDB connection error:', err);
-});
+// Use your actual MongoDB Atlas URI here with password included
+const MONGODB_URI = 'mongodb+srv://saikarthikeya97:Karthikeya.97@cluster0.jk2vf6u.mongodb.net/collab-editor?retryWrites=true&w=majority';
+
+// Connect to MongoDB (no need to specify useNewUrlParser/useUnifiedTopology)
+mongoose.connect(MONGODB_URI)
+    .then(() => {
+        console.log('MongoDB connected');
+
+        // Start server only after DB connection is successful
+        server.listen(PORT, () => {
+            console.log(`Server running on port ${PORT}`);
+        });
+    })
+    .catch(err => {
+        console.error('MongoDB connection error:', err);
+    });
 
 // Mongoose schema and model for document
 const documentSchema = new mongoose.Schema({
@@ -39,9 +45,12 @@ io.on('connection', (socket) => {
             socket.emit('load-document', doc.content);
         } else {
             const newDoc = new Document({ _id: DEFAULT_DOC_ID, content: {} });
-            newDoc.save();
+            newDoc.save().catch(e => console.error('Error saving new document:', e));
             socket.emit('load-document', {});
         }
+    }).catch(err => {
+        console.error('Error fetching document:', err);
+        socket.emit('load-document', {}); // fallback empty doc
     });
 
     // Listen for text changes and broadcast + save
@@ -50,18 +59,13 @@ io.on('connection', (socket) => {
 
         Document.findById(DEFAULT_DOC_ID).then(doc => {
             if (doc) {
-                // Here for simplicity, just replace content with last delta
                 doc.content = delta;
-                doc.save();
+                doc.save().catch(e => console.error('Error saving document:', e));
             }
-        });
+        }).catch(err => console.error('Error finding document:', err));
     });
 
     socket.on('disconnect', () => {
         console.log('Client disconnected');
     });
-});
-
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
 });
