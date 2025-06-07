@@ -1,147 +1,129 @@
-require("dotenv").config();
+require('dotenv').config();
 
-const express = require("express");
-const http = require("http");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const { Server } = require("socket.io");
-const path = require("path");
-const fs = require("fs");
-const Document = require("./Document");
+const express = require('express');
+const http = require('http');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const { Server } = require('socket.io');
+const path = require('path');
+const Document = require('./Document');
 
 const app = express();
 
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/google-docs-clone";
+// Configuration
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/google-docs-clone';
 const PORT = process.env.PORT || 5000;
 
-// Enhanced CORS configuration
+// Middleware
 app.use(cors({
   origin: FRONTEND_URL,
-  methods: ["GET", "POST"],
+  methods: ['GET', 'POST', 'OPTIONS'],
   credentials: true
 }));
 
-// Prevent favicon warnings
-app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'healthy',
+    mongo: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  });
+});
+
+// Create HTTP server
 const server = http.createServer(app);
 
-// Optimized Socket.IO configuration to prevent parsing warnings
+// Socket.IO configuration
 const io = new Server(server, {
   cors: {
     origin: FRONTEND_URL,
-    methods: ["GET", "POST"],
+    methods: ['GET', 'POST']
   },
-  serveClient: false,
-  connectionStateRecovery: {
-    maxDisconnectionDuration: 2 * 60 * 1000,
-    skipMiddlewares: true,
-  },
-  // Add parser configuration
-  parser: require("socket.io-parser"),
   pingTimeout: 60000,
   pingInterval: 25000
 });
 
-// Clean MongoDB connection without deprecated options
-mongoose.connect(MONGODB_URI, {
-  serverSelectionTimeoutMS: 5000,
-  socketTimeoutMS: 45000
-})
-.then(() => console.log("✅ MongoDB connected successfully"))
-.catch((err) => {
-  console.error("❌ MongoDB connection error:", err.message);
-  process.exit(1);
-});
+// MongoDB connection
+async function connectDB() {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000
+    });
+    console.log('✅ MongoDB connected');
+  } catch (err) {
+    console.error('❌ MongoDB connection failed:', err.message);
+    process.exit(1);
+  }
+}
 
-const defaultValue = "";
+// Document handling
+const defaultValue = '';
 
 async function findOrCreateDocument(id) {
   if (!id) return null;
-  
   try {
     const document = await Document.findById(id);
-    if (document) return document;
-    return await Document.create({ _id: id, data: defaultValue });
+    return document || await Document.create({ _id: id, data: defaultValue });
   } catch (err) {
-    console.error("Document error:", err.message);
+    console.error('Document error:', err.message);
     return null;
   }
 }
 
-// Socket.IO connection handling
-io.on("connection", (socket) => {
-  console.log("⚡ Client connected:", socket.id);
+// Socket.IO events
+io.on('connection', (socket) => {
+  console.log('⚡ Client connected:', socket.id);
 
-  socket.on("get-document", async (documentId) => {
+  socket.on('get-document', async (documentId) => {
     try {
       const document = await findOrCreateDocument(documentId);
       socket.join(documentId);
-      socket.emit("load-document", document?.data || defaultValue);
+      socket.emit('load-document', document?.data || defaultValue);
 
-      socket.on("send-changes", (delta) => {
-        socket.broadcast.to(documentId).emit("receive-changes", delta);
+      socket.on('send-changes', (delta) => {
+        socket.broadcast.to(documentId).emit('receive-changes', delta);
       });
 
-      socket.on("save-document", async (data) => {
-        try {
-          await Document.findByIdAndUpdate(documentId, { data }, { upsert: true });
-        } catch (err) {
-          console.error("Save error:", err.message);
-        }
+      socket.on('save-document', async (data) => {
+        await Document.findByIdAndUpdate(documentId, { data }, { upsert: true });
       });
     } catch (err) {
-      console.error("Document load error:", err.message);
-      socket.emit("load-document", defaultValue);
+      console.error('Document error:', err);
+      socket.emit('error', 'Failed to load document');
     }
   });
 
-  socket.on("disconnect", (reason) => {
-    console.log(`🔌 Client disconnected (${reason}):`, socket.id);
-  });
-
-  socket.on("error", (err) => {
-    console.error("Socket error:", err.message);
+  socket.on('disconnect', () => {
+    console.log('🔌 Client disconnected:', socket.id);
   });
 });
 
-// Static file serving
-const clientPath = path.join(__dirname, "..", "client", "build");
-
-if (fs.existsSync(clientPath)) {
-  app.use(express.static(clientPath, {
-    maxAge: '1d',
-    setHeaders: (res, path) => {
-      if (path.endsWith('.html')) {
-        res.setHeader('Cache-Control', 'no-cache');
-      }
-    }
-  }));
-
-  app.get("*", (req, res) => {
-    try {
-      res.sendFile(path.join(clientPath, "index.html"));
-    } catch (err) {
-      console.error("Serve static error:", err.message);
-      res.status(500).send("Internal Server Error");
-    }
-  });
-} else {
-  console.warn("⚠️ React build folder not found at:", clientPath);
-  app.get("/", (req, res) => {
-    res.send("API is running - Client build not found");
+// Serve static files (if client build exists)
+if (process.env.NODE_ENV === 'production') {
+  const clientPath = path.join(__dirname, '../client/build');
+  app.use(express.static(clientPath));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientPath, 'index.html'));
   });
 }
 
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "healthy" });
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 // Start server
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log("🌐 Allowed frontend origin:", FRONTEND_URL);
-  console.log("🔧 MongoDB:", MONGODB_URI.includes('localhost') ? "Local" : "Cloud");
-});
+async function startServer() {
+  await connectDB();
+  server.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🌐 CORS allowed for: ${FRONTEND_URL}`);
+  });
+}
+
+startServer();
