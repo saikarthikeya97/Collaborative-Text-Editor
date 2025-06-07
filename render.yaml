@@ -3,11 +3,12 @@ services:
     name: collab-editor
     env: node
     plan: free
-    buildCommand: cd client && npm install && npm run build && cd .. && npm install
+    buildCommand: |
+      cd client && npm install && npm run build
+      cd .. && npm install
     startCommand: node server/index.js
     envVars:
       - key: NODE_VERSION
         value: 20.11.1
       - key: MONGODB_URI
-        value: your-real-mongodb-uri
-
+        value: your-real-mongodb-uri  # Replace this with your actual MongoDB URI
