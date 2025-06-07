@@ -188,5 +188,5 @@ server.listen(PORT, () => {
 
     server.listen(PORT, () => {
         console.log(`\u{1F680} Server running on port ${PORT}`);
-        72b93ce(Fix wildcard route for Node 22 compatibility)
+       
 });
