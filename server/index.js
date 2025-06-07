@@ -6,6 +6,25 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
+
+// ======= Safety wrapper to catch invalid route paths immediately =======
+['get', 'post', 'put', 'delete', 'use'].forEach((method) => {
+  const original = app[method].bind(app);
+  app[method] = function (path, ...args) {
+    if (typeof path === 'string') {
+      if (path.startsWith('http')) {
+        console.error(`❌ ERROR: app.${method}() called with invalid path (full URL):`, path);
+        process.exit(1);
+      }
+      if (/:\s*[^/]/.test(path)) {
+        console.error(`❌ ERROR: app.${method}() called with invalid parameter in path:`, path);
+        process.exit(1);
+      }
+    }
+    return original(path, ...args);
+  };
+});
+
 app.use(cors());
 
 const server = http.createServer(app);
@@ -37,26 +56,13 @@ mongoose
   .connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
   .then(() => {
     console.log('✅ MongoDB connected');
-
-    // Log all registered routes for debugging
-    app._router.stack.forEach((middleware) => {
-      if (middleware.route) {
-        console.log('Route:', middleware.route.path);
-      } else if (middleware.name === 'router') {
-        middleware.handle.stack.forEach((handler) => {
-          if (handler.route) {
-            console.log('Route:', handler.route.path);
-          }
-        });
-      }
-    });
-
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
   })
   .catch((err) => {
     console.error('❌ MongoDB connection error:', err);
+    process.exit(1);
   });
 
 // Socket.IO Logic
@@ -92,7 +98,7 @@ io.on('connection', (socket) => {
 const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
 app.use(express.static(clientBuildPath));
 
-// Use '/*' to catch all routes for React SPA routing
+// Use '/*' to catch all React routes
 app.get('/*', (req, res) => {
   res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
