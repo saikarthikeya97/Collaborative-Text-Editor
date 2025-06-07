@@ -6,72 +6,73 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
-app.use(cors()); // Allow CORS for socket connection
+app.use(cors());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: '*',
-        methods: ['GET', 'POST'],
-    },
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+  },
 });
 
-// Environment variables
+// ✅ Environment variables
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI;
 
-// MongoDB connection
-mongoose.connect(MONGODB_URI)
-    .then(() => {
-        console.log('✅ MongoDB connected');
-        server.listen(PORT, () => {
-            console.log(`🚀 Server running on port ${PORT}`);
-        });
-    })
-    .catch(err => {
-        console.error('❌ MongoDB connection error:', err);
-    });
-
-// Mongoose Schema
+// ✅ Mongoose Schema & Model
 const documentSchema = new mongoose.Schema({
-    _id: String,
-    content: Object,
+  _id: String,
+  content: Object,
 });
 const Document = mongoose.model('Document', documentSchema);
 
-// Socket.IO logic
-io.on('connection', socket => {
-    console.log('🟢 New client connected');
+// ✅ Connect MongoDB and start server
+mongoose
+  .connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => {
+    console.log('✅ MongoDB connected');
+    server.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('❌ MongoDB connection error:', err);
+  });
 
-    socket.on('get-document', async documentId => {
-        if (!documentId) return;
+// ✅ Socket.IO Logic
+io.on('connection', (socket) => {
+  console.log('🟢 Client connected');
 
-        let document = await Document.findById(documentId);
-        if (!document) {
-            document = await Document.create({ _id: documentId, content: '' });
-        }
+  socket.on('get-document', async (documentId) => {
+    if (!documentId) return;
 
-        socket.join(documentId);
-        socket.emit('load-document', document.content);
+    let document = await Document.findById(documentId);
+    if (!document) {
+      document = await Document.create({ _id: documentId, content: '' });
+    }
 
-        socket.on('send-changes', delta => {
-            socket.broadcast.to(documentId).emit('receive-changes', delta);
-        });
+    socket.join(documentId);
+    socket.emit('load-document', document.content);
 
-        socket.on('save-document', async data => {
-            await Document.findByIdAndUpdate(documentId, { content: data });
-        });
+    socket.on('send-changes', (delta) => {
+      socket.broadcast.to(documentId).emit('receive-changes', delta);
     });
 
-    socket.on('disconnect', () => {
-        console.log('🔴 Client disconnected');
+    socket.on('save-document', async (data) => {
+      await Document.findByIdAndUpdate(documentId, { content: data });
     });
+  });
+
+  socket.on('disconnect', () => {
+    console.log('🔴 Client disconnected');
+  });
 });
 
-// ✅ Serve React frontend in production
+// ✅ Serve React frontend
 const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
 app.use(express.static(clientBuildPath));
 
 app.get('*', (req, res) => {
-    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
