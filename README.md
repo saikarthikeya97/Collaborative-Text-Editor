@@ -1,2 +1,2 @@
 # Collaborative-Text-Editor
-Real-time Collaborative Text Editor using MERN Stack, Quill.js, and Socket.io. Enables multiple users to edit documents simultaneously, similar to Google Docs.
+Collaborative Text Editor is a full-stack web application built with the MERN stack that allows multiple users to edit documents in real-time. It uses React for the frontend, Node.js + Express for the backend, MongoDB for storage, Socket.io for real-time collaboration, and Quill.js as the rich text editor. This project mimics the core functionality of platforms like Google Docs.
