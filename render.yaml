@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: collab-editor
+    env: node
+    plan: free
+    buildCommand: cd client && npm install && npm run build && cd .. && npm install
+    startCommand: node index.js
+    envVars:
+      - key: NODE_VERSION
+        value: 20.11.1
