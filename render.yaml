@@ -9,4 +9,5 @@ services:
       - key: NODE_VERSION
         value: 20.11.1
       - key: MONGODB_URI
-        value: your-mongodb-uri-here
+        value: your-real-mongodb-uri
+
