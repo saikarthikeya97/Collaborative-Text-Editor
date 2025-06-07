@@ -10,7 +10,7 @@ const io = new Server(server);
 const PORT = 4000;
 
 // Use your actual MongoDB Atlas URI here with password included
-const MONGODB_URI = 'mongodb+srv://saikarthikeya97:Karthikeya@123@cluster0.jk2vf6u.mongodb.net/collab-editor?retryWrites=true&w=majority';
+const MONGODB_URI = 'mongodb+srv://saikarthikeya97:Karthikeya%40123@cluster0.jk2vf6u.mongodb.net/collab-editor?retryWrites=true&w=majority';
 
 // Connect to MongoDB (no need to specify useNewUrlParser/useUnifiedTopology)
 mongoose.connect(MONGODB_URI)
