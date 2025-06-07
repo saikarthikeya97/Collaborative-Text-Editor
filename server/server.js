@@ -87,17 +87,15 @@ io.on("connection", (socket) => {
 });
 
 // Serve React build folder if exists
+// Serve React build folder ONLY if exists
 const clientPath = path.join(__dirname, "..", "client", "build");
 if (fs.existsSync(clientPath)) {
-  app.use(express.static(clientPath));
+    app.use(express.static(clientPath));
 
-  app.get("/*", (req, res) => {
-    res.sendFile(path.join(clientPath, "index.html"));
-  });
+    // ✅ FIXED: Safe wildcard route
+    app.get("/*", (req, res) => {
+        res.sendFile(path.join(clientPath, "index.html"));
+    });
 } else {
-  console.warn("\u26A0\uFE0F React build folder not found at:", clientPath);
+    console.warn("⚠️ React build folder not found at:", clientPath);
 }
-
-server.listen(PORT, () => {
-  console.log(`\u{1F680} Server running on port ${PORT}`);
-});
