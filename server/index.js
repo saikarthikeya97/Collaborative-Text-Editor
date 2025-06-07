@@ -6,19 +6,21 @@ const path = require('path');
 const cors = require('cors');
 
 const app = express();
-app.use(cors()); // allow cross-origin for socket connection
+app.use(cors()); // Allow CORS for socket connection
 
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
         origin: '*',
-        methods: ['GET', 'POST']
-    }
+        methods: ['GET', 'POST'],
+    },
 });
 
+// Environment variables
 const PORT = process.env.PORT || 4000;
 const MONGODB_URI = process.env.MONGODB_URI;
 
+// MongoDB connection
 mongoose.connect(MONGODB_URI)
     .then(() => {
         console.log('✅ MongoDB connected');
@@ -30,19 +32,25 @@ mongoose.connect(MONGODB_URI)
         console.error('❌ MongoDB connection error:', err);
     });
 
+// Mongoose Schema
 const documentSchema = new mongoose.Schema({
     _id: String,
     content: Object,
 });
 const Document = mongoose.model('Document', documentSchema);
 
-const DEFAULT_DOC_ID = 'default-document';
-
+// Socket.IO logic
 io.on('connection', socket => {
     console.log('🟢 New client connected');
 
     socket.on('get-document', async documentId => {
-        const document = await Document.findById(documentId) || await Document.create({ _id: documentId, content: '' });
+        if (!documentId) return;
+
+        let document = await Document.findById(documentId);
+        if (!document) {
+            document = await Document.create({ _id: documentId, content: '' });
+        }
+
         socket.join(documentId);
         socket.emit('load-document', document.content);
 
@@ -60,7 +68,10 @@ io.on('connection', socket => {
     });
 });
 
-app.use(express.static(path.join(__dirname, '../client/build')));
+// ✅ Serve React frontend in production
+const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
+app.use(express.static(clientBuildPath));
+
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, '../client/build', 'index.html'));
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
