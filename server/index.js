@@ -1,104 +1,82 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const mongoose = require('mongoose');
-const path = require('path');
-const cors = require('cors');
-
-const app = express();
-
-// ======= Safety wrapper to catch invalid route paths immediately =======
-['get', 'post', 'put', 'delete', 'use'].forEach((method) => {
-  const original = app[method].bind(app);
-  app[method] = function (path, ...args) {
-    if (typeof path === 'string') {
-      if (path.startsWith('http')) {
-        console.error(`❌ ERROR: app.${method}() called with invalid path (full URL):`, path);
-        process.exit(1);
-      }
-      if (/:\s*[^/]/.test(path)) {
-        console.error(`❌ ERROR: app.${method}() called with invalid parameter in path:`, path);
-        process.exit(1);
-      }
-    }
-    return original(path, ...args);
-  };
-});
-
-app.use(cors());
-
-const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST'],
-  },
-});
-
-// Environment variables
-const PORT = process.env.PORT || 4000;
-const MONGODB_URI = process.env.MONGODB_URI;
-
-if (!MONGODB_URI) {
-  console.error('❌ MONGODB_URI environment variable is not set');
-  process.exit(1);
-}
+const express = require("express");
+const http = require("http");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const { Server } = require("socket.io");
+const path = require("path");
 
 // Mongoose Schema & Model
 const documentSchema = new mongoose.Schema({
   _id: String,
-  content: Object,
+  data: Object, // use consistent naming - 'data' or 'content'
 });
-const Document = mongoose.model('Document', documentSchema);
+const Document = mongoose.model("Document", documentSchema);
 
-// Connect MongoDB and start server
+const app = express();
+app.use(cors());
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:3000", // change this to your deployed frontend URL or '*'
+    methods: ["GET", "POST"],
+  },
+});
+
+const PORT = process.env.PORT || 5000;
+const MONGODB_URI = process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/google-docs-clone";
+
 mongoose
   .connect(MONGODB_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => {
-    console.log('✅ MongoDB connected');
-    server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
-  })
+  .then(() => console.log("MongoDB connected"))
   .catch((err) => {
-    console.error('❌ MongoDB connection error:', err);
+    console.error("MongoDB connection error:", err);
     process.exit(1);
   });
 
-// Socket.IO Logic
-io.on('connection', (socket) => {
-  console.log('🟢 Client connected');
+const defaultValue = "";
 
-  socket.on('get-document', async (documentId) => {
+async function findOrCreateDocument(id) {
+  if (!id) return;
+  let document = await Document.findById(id);
+  if (document) return document;
+  return await Document.create({ _id: id, data: defaultValue });
+}
+
+io.on("connection", (socket) => {
+  console.log("Client connected:", socket.id);
+
+  socket.on("get-document", async (documentId) => {
     if (!documentId) return;
 
-    let document = await Document.findById(documentId);
-    if (!document) {
-      document = await Document.create({ _id: documentId, content: '' });
-    }
+    const document = await findOrCreateDocument(documentId);
 
     socket.join(documentId);
-    socket.emit('load-document', document.content);
+    socket.emit("load-document", document.data);
 
-    socket.on('send-changes', (delta) => {
-      socket.broadcast.to(documentId).emit('receive-changes', delta);
+    socket.on("send-changes", (delta) => {
+      socket.broadcast.to(documentId).emit("receive-changes", delta);
     });
 
-    socket.on('save-document', async (data) => {
-      await Document.findByIdAndUpdate(documentId, { content: data });
+    socket.on("save-document", async (data) => {
+      await Document.findByIdAndUpdate(documentId, { data });
     });
   });
 
-  socket.on('disconnect', () => {
-    console.log('🔴 Client disconnected');
+  socket.on("disconnect", () => {
+    console.log("Client disconnected:", socket.id);
   });
 });
 
-// Serve React frontend static files
-const clientBuildPath = path.join(__dirname, '..', 'client', 'build');
+// Serve React static files
+const clientBuildPath = path.join(__dirname, "..", "client", "build");
 app.use(express.static(clientBuildPath));
 
-// Use '/*' to catch all React routes
-app.get('/*', (req, res) => {
-  res.sendFile(path.join(clientBuildPath, 'index.html'));
+app.get("/*", (req, res) => {
+  res.sendFile(path.join(clientBuildPath, "index.html"));
+});
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
