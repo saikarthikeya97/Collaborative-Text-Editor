@@ -27,26 +27,25 @@ app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 const server = http.createServer(app);
 
-// Optimized Socket.IO configuration
+// Optimized Socket.IO configuration to prevent parsing warnings
 const io = new Server(server, {
   cors: {
     origin: FRONTEND_URL,
     methods: ["GET", "POST"],
   },
-  // Add these to prevent parsing warnings
   serveClient: false,
   connectionStateRecovery: {
-    maxDisconnectionDuration: 2 * 60 * 1000, // 2 minutes
+    maxDisconnectionDuration: 2 * 60 * 1000,
     skipMiddlewares: true,
   },
+  // Add parser configuration
+  parser: require("socket.io-parser"),
   pingTimeout: 60000,
   pingInterval: 25000
 });
 
-// Enhanced MongoDB connection
+// Clean MongoDB connection without deprecated options
 mongoose.connect(MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 45000
 })
@@ -71,7 +70,7 @@ async function findOrCreateDocument(id) {
   }
 }
 
-// Improved Socket.IO handling
+// Socket.IO connection handling
 io.on("connection", (socket) => {
   console.log("⚡ Client connected:", socket.id);
 
@@ -107,7 +106,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// Static file serving with improved error handling
+// Static file serving
 const clientPath = path.join(__dirname, "..", "client", "build");
 
 if (fs.existsSync(clientPath)) {
@@ -140,12 +139,9 @@ app.get("/health", (req, res) => {
   res.status(200).json({ status: "healthy" });
 });
 
+// Start server
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log("🌐 Allowed frontend origin:", FRONTEND_URL);
-  if (MONGODB_URI.includes('localhost')) {
-    console.log("🔧 Using local MongoDB");
-  } else {
-    console.log("🔧 Using cloud MongoDB");
-  }
+  console.log("🔧 MongoDB:", MONGODB_URI.includes('localhost') ? "Local" : "Cloud");
 });
