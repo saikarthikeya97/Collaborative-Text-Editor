@@ -20,21 +20,20 @@ const TOOLBAR_OPTIONS = [
 
 export default function TextEditor() {
   const { id: documentId } = useParams();
-  const [socket, setSocket] = useState();
-  const [quill, setQuill] = useState();
+  const [socket, setSocket] = useState(null);
+  const [quill, setQuill] = useState(null);
   const [isDocumentLoaded, setIsDocumentLoaded] = useState(false);
 
-  // Setup socket connection
+  // Initialize socket connection once
   useEffect(() => {
-    const s = io(import.meta.env.VITE_BACKEND_URL || "https://your-server-url.onrender.com");
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://your-server-url.onrender.com";
+    const s = io(backendUrl);
     setSocket(s);
 
-    return () => {
-      s.disconnect();
-    };
+    return () => s.disconnect();
   }, []);
 
-  // Load document from server
+  // Load document data when socket and quill are ready
   useEffect(() => {
     if (!socket || !quill) return;
 
@@ -47,7 +46,7 @@ export default function TextEditor() {
     socket.emit("get-document", documentId);
   }, [socket, quill, documentId]);
 
-  // Save document periodically
+  // Save document at intervals
   useEffect(() => {
     if (!socket || !quill) return;
 
@@ -55,26 +54,24 @@ export default function TextEditor() {
       socket.emit("save-document", quill.getContents());
     }, SAVE_INTERVAL_MS);
 
-    return () => {
-      clearInterval(interval);
-    };
+    return () => clearInterval(interval);
   }, [socket, quill]);
 
-  // Broadcast local changes
+  // Send local changes to server
   useEffect(() => {
     if (!socket || !quill) return;
 
-    const handler = delta => {
+    const handler = (delta, oldDelta, source) => {
+      if (source !== "user") return;
       socket.emit("send-changes", delta);
     };
 
     quill.on("text-change", handler);
-    return () => {
-      quill.off("text-change", handler);
-    };
+
+    return () => quill.off("text-change", handler);
   }, [socket, quill]);
 
-  // Receive changes from other users
+  // Receive remote changes from server
   useEffect(() => {
     if (!socket || !quill) return;
 
@@ -83,14 +80,13 @@ export default function TextEditor() {
     };
 
     socket.on("receive-changes", handler);
-    return () => {
-      socket.off("receive-changes", handler);
-    };
+
+    return () => socket.off("receive-changes", handler);
   }, [socket, quill]);
 
-  // Quill editor container setup
+  // Setup Quill editor container only once
   const wrapperRef = useCallback(wrapper => {
-    if (wrapper == null) return;
+    if (!wrapper) return;
 
     wrapper.innerHTML = "";
     const editor = document.createElement("div");
@@ -101,18 +97,20 @@ export default function TextEditor() {
       modules: { toolbar: TOOLBAR_OPTIONS },
     });
 
-    q.disable(); // Disable until document loads
+    q.disable(); // Disable editing until doc loads
 
     setQuill(q);
   }, []);
 
   return (
     <div className="container">
-      {!isDocumentLoaded && <h1 style={{ textAlign: "center", marginTop: "20px" }}>Loading document…</h1>}
+      {!isDocumentLoaded && (
+        <h1 style={{ textAlign: "center", marginTop: "20px" }}>Loading document…</h1>
+      )}
       <div
         ref={wrapperRef}
         style={{ display: isDocumentLoaded ? "block" : "none", minHeight: "400px" }}
-      ></div>
+      />
     </div>
   );
 }
