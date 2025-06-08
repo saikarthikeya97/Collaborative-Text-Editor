@@ -22,27 +22,21 @@ export default function TextEditor() {
   const { id: documentId } = useParams();
   const [socket, setSocket] = useState();
   const [quill, setQuill] = useState();
-  const [isDocumentLoaded, setIsDocumentLoaded] = useState(false);
-
-  // Define backend URL for socket connection
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+  const [isLoaded, setIsLoaded] = useState(false);
 
   useEffect(() => {
-    const s = io(BACKEND_URL);
+    const s = io(import.meta.env.VITE_BACKEND_URL || "https://collaborative-text-editor-1-lek8.onrender.com");
     setSocket(s);
-
-    return () => {
-      s.disconnect();
-    };
-  }, [BACKEND_URL]);
+    return () => s.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!socket || !quill) return;
 
-    socket.once("load-document", document => {
+    socket.once("load-document", (document) => {
       quill.setContents(document);
       quill.enable();
-      setIsDocumentLoaded(true);
+      setIsLoaded(true);
     });
 
     socket.emit("get-document", documentId);
@@ -61,28 +55,27 @@ export default function TextEditor() {
   useEffect(() => {
     if (!socket || !quill) return;
 
-    const handler = delta => {
-      socket.emit("send-changes", delta);
+    const handler = (delta) => {
+      quill.updateContents(delta);
     };
+    socket.on("receive-changes", handler);
 
-    quill.on("text-change", handler);
-    return () => quill.off("text-change", handler);
+    return () => socket.off("receive-changes", handler);
   }, [socket, quill]);
 
   useEffect(() => {
     if (!socket || !quill) return;
 
-    const handler = delta => {
-      quill.updateContents(delta);
+    const handler = (delta) => {
+      socket.emit("send-changes", delta);
     };
+    quill.on("text-change", handler);
 
-    socket.on("receive-changes", handler);
-    return () => socket.off("receive-changes", handler);
+    return () => quill.off("text-change", handler);
   }, [socket, quill]);
 
-  const wrapperRef = useCallback(wrapper => {
-    if (wrapper == null) return;
-
+  const wrapperRef = useCallback((wrapper) => {
+    if (!wrapper) return;
     wrapper.innerHTML = "";
     const editor = document.createElement("div");
     wrapper.append(editor);
@@ -91,23 +84,14 @@ export default function TextEditor() {
       theme: "snow",
       modules: { toolbar: TOOLBAR_OPTIONS },
     });
-
     q.disable();
-
     setQuill(q);
   }, []);
 
   return (
     <div className="container">
-      {!isDocumentLoaded && (
-        <h1 style={{ textAlign: "center", marginTop: "20px" }}>
-          Loading document…
-        </h1>
-      )}
-      <div
-        ref={wrapperRef}
-        style={{ display: isDocumentLoaded ? "block" : "none", minHeight: "400px" }}
-      ></div>
+      {!isLoaded && <h1 style={{ textAlign: "center", marginTop: "20px" }}>Loading document…</h1>}
+      <div ref={wrapperRef} style={{ display: isLoaded ? "block" : "none", minHeight: "400px" }}></div>
     </div>
   );
 }
