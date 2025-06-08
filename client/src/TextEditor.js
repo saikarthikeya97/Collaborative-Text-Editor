@@ -1,130 +1,103 @@
-import React, { useCallback, useEffect, useState } from "react";
+// src/TextEditor.js
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
-import { io } from "socket.io-client";
 import Quill from "quill";
 import "quill/dist/quill.snow.css";
+import { io } from "socket.io-client";
 
 const SAVE_INTERVAL_MS = 2000;
-
 const TOOLBAR_OPTIONS = [
-  [{ header: [1, 2, 3, 4, 5, 6, false] }],
-  [{ font: [] }],
-  [{ list: "ordered" }, { list: "bullet" }],
-  ["bold", "italic", "underline", "strike"],
-  [{ color: [] }, { background: [] }],
-  [{ script: "sub" }, { script: "super" }],
-  [{ align: [] }],
-  ["image", "blockquote", "code-block"],
-  ["clean"],
+    [{ header: [1, 2, 3, false] }],
+    [{ font: [] }],
+    [{ list: "ordered" }, { list: "bullet" }],
+    ["bold", "italic", "underline"],
+    [{ color: [] }, { background: [] }],
+    [{ script: "sub" }, { script: "super" }],
+    [{ align: [] }],
+    ["clean"],
 ];
 
 export default function TextEditor() {
-  const { id: documentId } = useParams();
-  const [socket, setSocket] = useState();
-  const [quill, setQuill] = useState();
-  const [isLoaded, setIsLoaded] = useState(false);
+    const { id: documentId } = useParams();
+    const [quill, setQuill] = useState();
+    const socketRef = useRef();
 
-  // Initialize socket
-  useEffect(() => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://collaborative-text-editor-1-lek8.onrender.com";
-    console.log("🔌 Connecting to backend:", backendUrl);
+    // Setup socket connection
+    useEffect(() => {
+        socketRef.current = io("http://localhost:5000");
+        return () => {
+            socketRef.current.disconnect();
+        };
+    }, []);
 
-    const s = io(backendUrl);
-    setSocket(s);
+    // Initialize Quill editor
+    const wrapperRef = useCallback((wrapper) => {
+        if (wrapper == null) return;
+        wrapper.innerHTML = "";
+        const editor = document.createElement("div");
+        wrapper.append(editor);
+        const q = new Quill(editor, {
+            theme: "snow",
+            modules: { toolbar: TOOLBAR_OPTIONS },
+        });
+        q.disable();
+        q.setText("Loading document...");
+        setQuill(q);
+    }, []);
 
-    return () => s.disconnect();
-  }, []);
+    // Load document data
+    useEffect(() => {
+        if (!socketRef.current || !quill) return;
 
-  // Load document content
-  useEffect(() => {
-    if (!socket || !quill) return;
+        socketRef.current.once("load-document", (document) => {
+            quill.setContents(document);
+            quill.enable();
+        });
 
-    socket.once("load-document", (document) => {
-      console.log("📄 Document received:", document);
-      if (!document || typeof document !== "object") {
-        console.error("❌ Invalid document format received");
-        return;
-      }
+        socketRef.current.emit("get-document", documentId);
+    }, [socketRef, quill, documentId]);
 
-      try {
-        quill.setContents(document);
-        quill.enable();
-        setIsLoaded(true);
-      } catch (err) {
-        console.error("⚠️ Failed to set document contents:", err);
-      }
-    });
+    // Save document every SAVE_INTERVAL_MS
+    useEffect(() => {
+        if (!socketRef.current || !quill) return;
+        const interval = setInterval(() => {
+            socketRef.current.emit("save-document", quill.getContents());
+        }, SAVE_INTERVAL_MS);
+        return () => clearInterval(interval);
+    }, [socketRef, quill]);
 
-    socket.emit("get-document", documentId);
-  }, [socket, quill, documentId]);
+    // Send changes to server
+    useEffect(() => {
+        if (!socketRef.current || !quill) return;
 
-  // Auto-save every 2 seconds
-  useEffect(() => {
-    if (!socket || !quill) return;
+        const handler = (delta, oldDelta, source) => {
+            if (source !== "user") return;
+            socketRef.current.emit("send-changes", delta);
+        };
+        quill.on("text-change", handler);
 
-    const interval = setInterval(() => {
-      const contents = quill.getContents();
-      socket.emit("save-document", contents);
-      console.log("💾 Document saved");
-    }, SAVE_INTERVAL_MS);
+        return () => {
+            quill.off("text-change", handler);
+        };
+    }, [socketRef, quill]);
 
-    return () => clearInterval(interval);
-  }, [socket, quill]);
+    // Receive changes from server
+    useEffect(() => {
+        if (!socketRef.current || !quill) return;
 
-  // Handle incoming changes
-  useEffect(() => {
-    if (!socket || !quill) return;
+        const handler = (delta) => {
+            quill.updateContents(delta);
+        };
 
-    const handleReceive = (delta) => {
-      quill.updateContents(delta);
-      console.log("🔄 Document updated from other user");
-    };
+        socketRef.current.on("receive-changes", handler);
+        return () => {
+            socketRef.current.off("receive-changes", handler);
+        };
+    }, [socketRef, quill]);
 
-    socket.on("receive-changes", handleReceive);
-    return () => socket.off("receive-changes", handleReceive);
-  }, [socket, quill]);
-
-  // Send local changes
-  useEffect(() => {
-    if (!socket || !quill) return;
-
-    const handleChange = (delta) => {
-      socket.emit("send-changes", delta);
-    };
-
-    quill.on("text-change", handleChange);
-    return () => quill.off("text-change", handleChange);
-  }, [socket, quill]);
-
-  // Setup Quill instance
-  const wrapperRef = useCallback((wrapper) => {
-    if (!wrapper) return;
-    wrapper.innerHTML = "";
-    const editor = document.createElement("div");
-    wrapper.append(editor);
-
-    const q = new Quill(editor, {
-      theme: "snow",
-      modules: { toolbar: TOOLBAR_OPTIONS },
-    });
-
-    q.disable();
-    q.setText("Loading document...");
-    setQuill(q);
-  }, []);
-
-  return (
-    <div className="container">
-      {!isLoaded && (
-        <h1 style={{ textAlign: "center", marginTop: "20px" }}>Loading document…</h1>
-      )}
-      <div
-        ref={wrapperRef}
-        style={{
-          display: isLoaded ? "block" : "none",
-          minHeight: "400px",
-        }}
-      ></div>
-    </div>
-  );
+    return (
+        <div className="container mx-auto p-6 bg-white shadow-lg rounded-lg min-h-[600px]">
+            <div ref={wrapperRef} className="quill-editor" style={{ height: "500px" }} />
+        </div>
+    );
 }
