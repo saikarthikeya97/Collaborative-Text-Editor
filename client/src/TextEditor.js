@@ -24,56 +24,79 @@ export default function TextEditor() {
   const [quill, setQuill] = useState();
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // Initialize socket
   useEffect(() => {
-    const s = io(import.meta.env.VITE_BACKEND_URL || "https://collaborative-text-editor-1-lek8.onrender.com");
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://collaborative-text-editor-1-lek8.onrender.com";
+    console.log("🔌 Connecting to backend:", backendUrl);
+
+    const s = io(backendUrl);
     setSocket(s);
+
     return () => s.disconnect();
   }, []);
 
+  // Load document content
   useEffect(() => {
     if (!socket || !quill) return;
 
     socket.once("load-document", (document) => {
-      quill.setContents(document);
-      quill.enable();
-      setIsLoaded(true);
+      console.log("📄 Document received:", document);
+      if (!document || typeof document !== "object") {
+        console.error("❌ Invalid document format received");
+        return;
+      }
+
+      try {
+        quill.setContents(document);
+        quill.enable();
+        setIsLoaded(true);
+      } catch (err) {
+        console.error("⚠️ Failed to set document contents:", err);
+      }
     });
 
     socket.emit("get-document", documentId);
   }, [socket, quill, documentId]);
 
+  // Auto-save every 2 seconds
   useEffect(() => {
     if (!socket || !quill) return;
 
     const interval = setInterval(() => {
-      socket.emit("save-document", quill.getContents());
+      const contents = quill.getContents();
+      socket.emit("save-document", contents);
+      console.log("💾 Document saved");
     }, SAVE_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [socket, quill]);
 
+  // Handle incoming changes
   useEffect(() => {
     if (!socket || !quill) return;
 
-    const handler = (delta) => {
+    const handleReceive = (delta) => {
       quill.updateContents(delta);
+      console.log("🔄 Document updated from other user");
     };
-    socket.on("receive-changes", handler);
 
-    return () => socket.off("receive-changes", handler);
+    socket.on("receive-changes", handleReceive);
+    return () => socket.off("receive-changes", handleReceive);
   }, [socket, quill]);
 
+  // Send local changes
   useEffect(() => {
     if (!socket || !quill) return;
 
-    const handler = (delta) => {
+    const handleChange = (delta) => {
       socket.emit("send-changes", delta);
     };
-    quill.on("text-change", handler);
 
-    return () => quill.off("text-change", handler);
+    quill.on("text-change", handleChange);
+    return () => quill.off("text-change", handleChange);
   }, [socket, quill]);
 
+  // Setup Quill instance
   const wrapperRef = useCallback((wrapper) => {
     if (!wrapper) return;
     wrapper.innerHTML = "";
@@ -84,14 +107,24 @@ export default function TextEditor() {
       theme: "snow",
       modules: { toolbar: TOOLBAR_OPTIONS },
     });
+
     q.disable();
+    q.setText("Loading document...");
     setQuill(q);
   }, []);
 
   return (
     <div className="container">
-      {!isLoaded && <h1 style={{ textAlign: "center", marginTop: "20px" }}>Loading document…</h1>}
-      <div ref={wrapperRef} style={{ display: isLoaded ? "block" : "none", minHeight: "400px" }}></div>
+      {!isLoaded && (
+        <h1 style={{ textAlign: "center", marginTop: "20px" }}>Loading document…</h1>
+      )}
+      <div
+        ref={wrapperRef}
+        style={{
+          display: isLoaded ? "block" : "none",
+          minHeight: "400px",
+        }}
+      ></div>
     </div>
   );
 }
