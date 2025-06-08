@@ -6,7 +6,6 @@ const cors = require("cors");
 const Document = require("./Document");
 
 const app = express();
-
 app.use(cors());
 
 const server = http.createServer(app);
@@ -19,7 +18,10 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 5000;
-const MONGO_URI = process.env.MONGO_URI;
+// Corrected environment variable name here:
+const MONGO_URI = process.env.MONGODB_URI;
+
+console.log("MongoDB URI:", MONGO_URI); // For debugging
 
 mongoose
   .connect(MONGO_URI)
