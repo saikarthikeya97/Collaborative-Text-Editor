@@ -20,20 +20,22 @@ const TOOLBAR_OPTIONS = [
 
 export default function TextEditor() {
   const { id: documentId } = useParams();
-  const [socket, setSocket] = useState(null);
-  const [quill, setQuill] = useState(null);
+  const [socket, setSocket] = useState();
+  const [quill, setQuill] = useState();
   const [isDocumentLoaded, setIsDocumentLoaded] = useState(false);
 
-  // Initialize socket connection once
+  // Define backend URL for socket connection
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+
   useEffect(() => {
-    const backendUrl = import.meta.env.VITE_BACKEND_URL || "https://your-server-url.onrender.com";
-    const s = io(backendUrl);
+    const s = io(BACKEND_URL);
     setSocket(s);
 
-    return () => s.disconnect();
-  }, []);
+    return () => {
+      s.disconnect();
+    };
+  }, [BACKEND_URL]);
 
-  // Load document data when socket and quill are ready
   useEffect(() => {
     if (!socket || !quill) return;
 
@@ -46,7 +48,6 @@ export default function TextEditor() {
     socket.emit("get-document", documentId);
   }, [socket, quill, documentId]);
 
-  // Save document at intervals
   useEffect(() => {
     if (!socket || !quill) return;
 
@@ -57,21 +58,17 @@ export default function TextEditor() {
     return () => clearInterval(interval);
   }, [socket, quill]);
 
-  // Send local changes to server
   useEffect(() => {
     if (!socket || !quill) return;
 
-    const handler = (delta, oldDelta, source) => {
-      if (source !== "user") return;
+    const handler = delta => {
       socket.emit("send-changes", delta);
     };
 
     quill.on("text-change", handler);
-
     return () => quill.off("text-change", handler);
   }, [socket, quill]);
 
-  // Receive remote changes from server
   useEffect(() => {
     if (!socket || !quill) return;
 
@@ -80,13 +77,11 @@ export default function TextEditor() {
     };
 
     socket.on("receive-changes", handler);
-
     return () => socket.off("receive-changes", handler);
   }, [socket, quill]);
 
-  // Setup Quill editor container only once
   const wrapperRef = useCallback(wrapper => {
-    if (!wrapper) return;
+    if (wrapper == null) return;
 
     wrapper.innerHTML = "";
     const editor = document.createElement("div");
@@ -97,7 +92,7 @@ export default function TextEditor() {
       modules: { toolbar: TOOLBAR_OPTIONS },
     });
 
-    q.disable(); // Disable editing until doc loads
+    q.disable();
 
     setQuill(q);
   }, []);
@@ -105,12 +100,14 @@ export default function TextEditor() {
   return (
     <div className="container">
       {!isDocumentLoaded && (
-        <h1 style={{ textAlign: "center", marginTop: "20px" }}>Loading document…</h1>
+        <h1 style={{ textAlign: "center", marginTop: "20px" }}>
+          Loading document…
+        </h1>
       )}
       <div
         ref={wrapperRef}
         style={{ display: isDocumentLoaded ? "block" : "none", minHeight: "400px" }}
-      />
+      ></div>
     </div>
   );
 }
