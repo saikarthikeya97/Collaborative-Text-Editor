@@ -1,7 +1,6 @@
-<<<<<<< HEAD
-=======
 
->>>>>>> fed74c9 (Save current changes before pull)
+
+
 import React, { useCallback, useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import Quill from 'quill';
